@@ -10,11 +10,12 @@ from selenium.webdriver.common.by import By
 
 
 # 初始化驱动
+
 def init_web_driver():
     executable_path = current_path + 'chromedriver'
 
     if executable_path == '' or not os.path.exists(executable_path):
-        input('没有在程序当前目录下找·到 chromedriver')
+        input('程序终止，没有在程序当前目录下找到 chromedriver')
         sys.exit()
 
     options = webdriver.ChromeOptions()
@@ -34,8 +35,8 @@ def load_account_info():
     location = current_path + 'account.txt'
 
     if not os.path.exists(location):
-        print("没有在程序当前目录下找到 {}".format('account.xlsx ，请创建一个名为 account.txt 的文本文档'))
-        return
+        print("程序终止，没有在程序当前目录下找到 {}".format('account.xlsx ，请创建一个名为 account.txt 的文本文档'))
+        sys.exit()
 
     print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：读取账户信息...")
     tmp_queue = queue.Queue()
@@ -52,8 +53,8 @@ def load_account_info():
 def load_title_info():
     location = current_path + 'title.txt'
     if not os.path.exists(location):
-        print("没有在程序当前目录下找到 {}".format('title.xlsx ，请创建一个名为 title.txt 的文本文档'))
-        return
+        print("程序终止，没有在程序当前目录下找到 {}".format('title.xlsx ，请创建一个名为 title.txt 的文本文档'))
+        sys.exit()
 
     print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：读取标题列表...")
     tmp_queue = queue.Queue()
