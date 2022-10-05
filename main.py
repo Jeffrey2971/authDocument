@@ -8,13 +8,13 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
-
 # 初始化驱动
 
 def init_web_driver():
-    executable_path = current_path + 'chromedriver'
+    chrome_driver_location = current_path + 'data/Chrome-bin/chromedriver'
+    chrome_bin_location = current_path + 'data/Chrome-bin/chrome'
 
-    if executable_path == '' or not os.path.exists(executable_path):
+    if chrome_driver_location == '' or not os.path.exists(chrome_driver_location):
         input('程序终止，没有在程序当前目录下找到 chromedriver')
         sys.exit()
 
@@ -24,24 +24,26 @@ def init_web_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-images")
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    options.binary_location = chrome_bin_location
     options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.0.0 Safari/537.36")
 
-    return webdriver.Chrome(service=Service(executable_path=executable_path), options=options)
+    return webdriver.Chrome(service=Service(executable_path=chrome_driver_location), options=options)
 
 
 # 读取当前程序下的用户名、密码信息
 
 def load_account_info():
-    location = current_path + 'account.txt'
+    location = current_path + 'data/account.txt'
 
     if not os.path.exists(location):
-        print("程序终止，没有在程序当前目录下找到 {}".format('account.xlsx ，请创建一个名为 account.txt 的文本文档'))
+        input("程序终止，没有在程序当前目录下找到 {}".format('account.txt ，请创建一个名为 account.txt 的文本文档'))
         sys.exit()
 
     print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：读取账户信息...")
     tmp_queue = queue.Queue()
 
-    with open(file=location, mode='r') as file:
+    with open(file=location, mode='r', encoding='utf-8') as file:
         for i in file.readlines():
             tmp_queue.put(i)
 
@@ -51,15 +53,15 @@ def load_account_info():
 # 读取当前程序目录下的标题
 
 def load_title_info():
-    location = current_path + 'title.txt'
+    location = current_path + 'data/title.txt'
     if not os.path.exists(location):
-        print("程序终止，没有在程序当前目录下找到 {}".format('title.xlsx ，请创建一个名为 title.txt 的文本文档'))
+        input("程序终止，没有在程序当前目录下找到 {}".format('title.xlsx ，请创建一个名为 title.txt 的文本文档'))
         sys.exit()
 
     print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：读取标题列表...")
     tmp_queue = queue.Queue()
 
-    with open(file=location, mode='r') as file:
+    with open(file=location, mode='r', encoding='utf-8') as file:
         for i in file.readlines():
             tmp_queue.put(i)
 
@@ -82,9 +84,9 @@ def into_document_produce():
         WebDriverWait(web_driver, 30, 0.5).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="app"]/div/div/div[3]/div/div'))).click()
     except Exception as e:
         info1 = time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：发生错误，原因是 {} ，程序结束，日志以记录".format(e)
-        print(info1)
         log.append(info1)
         web_driver.close()
+        input(info1)
 
 
 if __name__ == '__main__':
@@ -132,10 +134,10 @@ if __name__ == '__main__':
             resp_lis = resp_paragraphs.find_elements(By.TAG_NAME, 'li')
 
             # --------------------------------------写入数据-------------------------------------- #
-            document_location = current_path + title + ".txt"
+            document_location = current_path + 'data/document/' + title + ".txt"
             print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：正在将文章 [{}] 写入到 {}".format(title,
                                                                                                        document_location))
-            with open(file=document_location, mode='w') as out:
+            with open(file=document_location, mode='w', encoding='utf-8') as out:
                 out.writelines(resp_title_p + '\n\n')
                 out.writelines(resp_reface_p + '\n\n')
                 for li in resp_lis:
@@ -152,12 +154,13 @@ if __name__ == '__main__':
             log.append(info2)
             pass
 
-    log_location = current_path + 'runtime.log'
-    with open(file=log_location, mode='w+') as f:
+    log_location = current_path + 'data/log/runtime.log'
+    with open(file=log_location, mode='w+', encoding='utf-8') as f:
         if len(log) == 0:
             f.writelines("\n\n运行期间没有发生任何异常\n\n")
 
         for item in log:
             f.writelines(item + '\n\n')
-    print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：关闭驱动，程序结束，运行时日志已生成于 {} 下，再见".format(log_location))
+    input(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + "：关闭驱动，程序结束，运行时日志已生成于 {} 下，再见".format(log_location))
     web_driver.close()
+
