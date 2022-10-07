@@ -1,0 +1,33 @@
+
+
+
+<head>
+<script src="./static/jsencrypt.min.js"></script>
+</head>
+<body>
+<input value="{{ pwd }}">
+<script>
+  // 公钥
+  const publicKey ="MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCX4kRYjU6XclWT4mwxgQ55JerRar8CPEHp4uZRITqZuk8p0z5UTL02muequw2dgvgNlJkE8C7eyXf1S8TH+MvbVkHnCoKKigAPb08PtqcvVIqnZn+kNDpiQZapkpHrEXeR+rWfj3etTwMHYbV+zTaKOdxa7fm3oO4CWbgmfkSC8wIDAQAB";
+  var encrypt = new JSEncrypt();
+  encrypt.setPublicKey(publicKey);
+
+  function b(password) {
+    return encrypt.encrypt(password);
+  };
+
+  function a(){
+  var pwd=document.getElementsByTagName("input")[0].value;
+  var encrypted = encrypt.encrypt(pwd);
+  //返回加密后的密文在input
+  document.getElementsByTagName("input")[0].value=encrypted;
+  return encrypted}
+
+
+  //自动调用 a
+
+
+</script>
+</body>
+
+
