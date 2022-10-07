@@ -1,3 +1,6 @@
+import ctypes
+
+import requests_html
 import json
 import queue
 import threading
@@ -7,11 +10,10 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 import requests
-from requests_html import HTMLSession
 import uvicorn
 from fastapi.responses import HTMLResponse
 from starlette.responses import FileResponse
-
+from copy import deepcopy
 from fastapi import FastAPI
 
 
@@ -25,10 +27,10 @@ class Init:
         self.log = []
         self.account_item_list = []
         self.properties_tmp = {}
-        self.log_location = current_path + "/data/log/runtime.log"
-        self.title_location = current_path + '/data/conf/title.txt'
-        self.runtime_conf_location = current_path + '/data/conf/runtime_conf.properties'
-        self.account_text_location = current_path + '/data/conf/account.txt'
+        self.log_location = current_path + "\\data\\log\\runtime.log"
+        self.title_location = current_path + '\\data\\conf\\title.txt'
+        self.runtime_conf_location = current_path + '\\data\\conf\\runtime_conf.properties'
+        self.account_text_location = current_path + '\\data\\conf\\account.txt'
         self.login_url = "https://xiezuocat.com/login"
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1343.50"
         self.referer = "https://xiezuocat.com/"
@@ -39,11 +41,11 @@ class Init:
         # 静态资源
         @app.get("/static/{file_path:path}")
         async def static(file_path: str):
-            return FileResponse(current_path + "data/static/" + file_path)
+            return FileResponse(current_path + "\\data\\static\\" + file_path)
 
         @app.get("/{pwd}", response_class=HTMLResponse)
         async def server(pwd: str):
-            with open(current_path + "/data/static/pwd.html", "r", encoding="utf-8") as f:
+            with open(current_path + "\\data\\static\\pwd.html", mode="r", encoding="utf-8") as f:
                 html = f.read()
 
             html = html.replace("{{ pwd }}", pwd)
@@ -106,6 +108,7 @@ class Init:
         return self.properties_tmp
 
     def __static_create_account_json_file(self, account_text_location, account_json_location):
+        print("登陆所有账号")
         self.account_item_list.clear()
         with open(file=account_text_location, mode='r', encoding='utf-8') as text:
             for line in text.readlines():
@@ -141,10 +144,10 @@ class Init:
         url = "http://127.0.0.1:8000/" + password
 
         # 自动下载驱动
-        session = HTMLSession()
+        session = requests_html.HTMLSession()
         r = session.get(url)
 
-        data["pwd"] = r.html.render(script="a()").strip()
+        data["pwd"] = r.html.render(script="a()", timeout=200).strip()
 
         resp = requests.post(url=self.login_url, headers={
             "user-agent": self.user_agent,
@@ -180,40 +183,36 @@ class DocumentProduce:
         self.origin = "https://xiezuocat.com"
         self.content_type = "application/json"
         self.accept = "application/json, text/plain, */*; charset=utf-8"
-        self.pool = ThreadPoolExecutor(max_workers=int(runtime_conf.get("pool_max_size")), thread_name_prefix="线程：")
-        # 存放线程执行状态，由于线程池最大连接数为 10 ，所以队列中最多有 10 个数据状态
-        self.executor_status_queue = queue.Queue(10)
+        self.executor_queue = queue.Queue()
 
     def run(self):
 
-        # while True:
-        #     if not self.title_queue.empty() or not self.executor_status_queue.empty():
-        #
-        #         # 线程状态队列不空或标题队列不空
-        #         if not self.title_queue.empty():
-        #             __title = self.title_queue.get()
-        #             __account = account_manager(force_update=False)
-        #             __request_body = self.__request_param_wrapper(__account.get("login_response").get("data"), __title)
-        #             self.pool.submit(lambda p: self.__request_and_write_document(*p), [__request_body, __title, __account])
-        #
-        #         elif not self.executor_status_queue.empty():
-        #             __executor = self.executor_status_queue.get()
-        #             if not __executor.done():
-        #                 # 某个进程执行完毕
-        #                 print("线程：{} 执行完毕", __executor)
-        #                 self.executor_status_queue.put(__executor)
-        #             pass
-        #         pass
-        #     if self.title_queue.empty() and self.executor_status_queue.empty():
-        #         os.system("task kill /f /im uvicorn")
-        #         print("程序结束")
-        #         break
+        global __thread
+        while True:
+            if not self.title_queue.empty():
+                task = []
+                for i in range(int(runtime_conf.get("step"))):
+                    if not self.title_queue.empty():
+                        __title = self.title_queue.get().replace('\n', '')
+                        __account = account_manager(force_update=False)
+                        __request_body = self.__request_param_wrapper(__account.get("login_response").get("data"),
+                                                                      __title)
 
-        __title = self.title_queue.get()
-        __account = account_manager(force_update=False)
-        __request_body = self.__request_param_wrapper(__account.get("login_response").get("data"), __title)
-        # self.pool.submit(lambda p: self.__request_and_write_document(*p), [__request_body, __title, __account])
-        self.__request_and_write_document(__request_body, __title, __account)
+                        task.append(threading.Thread(target=self.__request_and_write_document,
+                                                     args=([__request_body, __title, __account])))
+
+                for t in task:
+                    t.start()
+                while len(task) != 0:
+                    print("等待线程响应...")
+                    time.sleep(2)
+                    for t in task:
+                        if not t.is_alive():
+                            print("子线程完成：" + task.pop().getName())
+
+            else:
+                print("没有更多标题，程序结束")
+                sys.exit()
 
     # 请求参数包装
     def __request_param_wrapper(self, data, title):
@@ -238,23 +237,32 @@ class DocumentProduce:
         print("处理：" + title)
         __response_json = requests.post(url=self.login_url, headers=request_body.get("headers"),
                                         json=request_body.get("data")).json()
+        print(__response_json)
         if __response_json.get("errCode") == 0:
             # success
 
-            with open(file=current_path + "data/document/{}.txt".format(title), mode='w+', encoding='utf-8') as j:
+            with open(file=current_path + "\\data\\document\\{}.txt".format(title), mode='w', encoding='utf-8') as j:
                 intro = __response_json.get("data").get("result").get("intro") + '\n\n'
-                contents_list = __response_json.get("data").get("result").get("contents") + '\n'
+                contents_list = __response_json.get("data").get("result").get("contents")
                 j.write(intro)
                 for item in contents_list:
-                    j.write(item.get("title"))
-                    j.write(item.get("intro"))
+                    j.write(item.get("title") + "\n\n")
+                    j.write(item.get("intro") + "\n\n")
                 j.flush()
+
         elif __response_json.get("errCode") == 401:
+            # 有异常时把标题返回队列
+            self.title_queue.put(title)
             print("账号被禁止登陆")
             pass
         elif __response_json.get("errCode") == 4001:
             # threshold
-            account_manager(force_update=True)
+            # 有异常时把标题返回队列
+            self.title_queue.put(title)
+            # lock.release()
+            print(account_big_json_dict)
+            if account_manager(force_update=True) is None:
+                lock.release()
 
         # json.dump(__response_json.json(),
         #           open(current_path + "data/document/{}.txt".format(title), mode='w+', encoding='utf-8'),
@@ -263,25 +271,40 @@ class DocumentProduce:
 
 first_get_account = True
 pop_account = []
+backup_big_json_account = {}
 
 
 def account_manager(force_update):
-    lock.acquire()
-
-    global first_get_account, current_use_account, account_big_json_dict
+    global first_get_account, current_use_account, account_big_json_dict, backup_big_json_account
 
     if force_update:
         print("给定的账号意外不可用：" + str(current_use_account))
         current_use_account.update({"status": 0})
+        # 这里是为了本地更新
         update_account(current_use_account)
         pop_account.append(current_use_account)
-        current_use_account = account_big_json_dict.get("accounts").pop()
-        print("切换新的账号：{}".format(current_use_account))
-        return current_use_account
+        if len(account_big_json_dict.get("accounts")) == 0:
+            print("已经没有可用的账号")
+            return None
+        else:
+            current_use_account = account_big_json_dict.get("accounts").pop()
+            print("切换新的账号：{}".format(current_use_account))
+            lock.release()
+            return current_use_account
 
+    lock.acquire()
 
+    not_size = 0
     if first_get_account:
         account_big_json_dict = init.load_account_info()
+        for j in account_big_json_dict.get("accounts"):
+            if j.get("status") == 0:
+                not_size += 1
+        if not_size == len(account_big_json_dict.get("accounts")):
+            print("没有可用账号")
+            sys.exit()
+
+        backup_big_json_account = deepcopy(account_big_json_dict)
         current_use_account = account_big_json_dict.get("accounts").pop()
         first_get_account = False
         print("获取账号：" + str(current_use_account))
@@ -294,8 +317,9 @@ def account_manager(force_update):
     ):
         # 没有更多的可用账号
         if len(account_big_json_dict.get("accounts")) == 0:
-            print("已经没有可用的账号，程序退出，日志已生成于 {} 下，账号详情查看 {}".format("/data/log/runtime.log", "/data/conf/account.json"))
-            sys.exit()
+            print(
+                "已经没有可用的账号，但线程可能还会继续")
+            return current_use_account
         else:
             pop_account.append(current_use_account)
             current_use_account = account_big_json_dict.get("accounts").pop()
@@ -316,7 +340,6 @@ def update_account(current_use_account):
     更新当前使用账号的信息，这个方法线程安全，不要对 account_big_json_dict 中的 accounts 做任何修改，这个任务应该交给 account_manager
     :return: None
     """
-
 
     if time.strftime("%d", time.localtime(account_big_json_dict.get("last_modify_time"))) != time.strftime("%d",
                                                                                                            time.localtime(
@@ -352,20 +375,20 @@ def update_account(current_use_account):
         }
     )
 
+    update_account_json(current_use_account)
+
 
 def update_account_json(current_use_account):
     # 实时更新本地 json 文件，这个方法应该是 update_account 执行完后被调用
-    # with open(file=account_json_location, mode='w+', encoding='utf-8') as update:
-    #     account_big_json_dict.get("accounts").append(current_use_account)
-    #     update.writelines(json.dumps(account_big_json_dict))
-    #
-    # account_big_json_dict.get("accounts").pop()
 
-    pass
-
-    # 此时的 account_big_json_dict 是不完整的，需要拼接上 current_use_account 后覆盖到原有的 json 最后需要 pop 出刚刚拼接的 current_use_account
-    # 存在问题
-
+    with open(file=account_json_location, mode='w+', encoding='utf-8') as update:
+        account_list = backup_big_json_account.get("accounts")
+        for item in account_list:
+            if item.get("username") == current_use_account.get("username"):
+                item.update(current_use_account)
+        print("实时更新 account.json")
+        print(backup_big_json_account)
+        update.write(json.dumps(backup_big_json_account))
 
 
 def write_runtime_log_and_close_resource():
@@ -383,15 +406,15 @@ def run():
 
 
 if __name__ == '__main__':
-    # current_path = sys.argv[0].replace(sys.argv[0].split(os.sep)[-1], '')
+    ctypes.windll.kernel32.SetConsoleTitleW("QQ：2243321642")
     current_path = os.path.dirname(os.path.realpath(sys.argv[0]))
 
-    account_json_location = current_path + '/data/conf/account.json'
+    account_json_location = current_path + '\\data\\conf\\account.json'
     app = FastAPI()
 
     init = Init()
     init.init_fast_api()
-
+    time.sleep(3)
     lock = threading.Lock()
 
     title_queue = init.load_title_info()
