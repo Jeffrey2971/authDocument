@@ -1,5 +1,4 @@
 import ctypes
-
 import requests_html
 import json
 import queue
@@ -7,14 +6,16 @@ import threading
 import time
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 import requests
 import uvicorn
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from starlette.responses import FileResponse
 from copy import deepcopy
-from fastapi import FastAPI
+import wmi
+import uuid
+import hashlib
 
 
 class Init:
@@ -174,6 +175,85 @@ class Init:
         print(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()) + info)
 
 
+class Hardware:
+
+    @staticmethod
+    def __get_mac_address():
+        node = uuid.getnode()
+
+        mac = uuid.UUID(int=node).hex[-12:]
+
+        return mac
+
+    @staticmethod
+    def __get_cpu_sn():
+        """
+        获取CPU序列号
+        :return: CPU序列号
+        """
+        c = wmi.WMI()
+        for cpu in c.Win32_Processor():
+            # print(cpu.ProcessorId.strip())
+            return cpu.ProcessorId.strip()
+
+    @staticmethod
+    def __get_baseboard_sn():
+        """
+        获取主板序列号
+        :return: 主板序列号
+        """
+        c = wmi.WMI()
+        for board_id in c.Win32_BaseBoard():
+            # print(board_id.SerialNumber)
+            return board_id.SerialNumber
+
+    @staticmethod
+    def __get_bios_sn():
+        """
+        获取BIOS序列号
+        :return: BIOS序列号
+        """
+        c = wmi.WMI()
+        for bios_id in c.Win32_BIOS():
+            # print(bios_id.SerialNumber.strip)
+            return bios_id.SerialNumber.strip()
+
+    @staticmethod
+    def __get_disk_sn():
+        """
+        获取硬盘序列号
+        :return: 硬盘序列号列表
+        """
+        c = wmi.WMI()
+
+        disk_sn_list = []
+        for physical_disk in c.Win32_DiskDrive():
+            disk_sn_list.append(physical_disk.SerialNumber.replace(" ", ""))
+        __tmp_disk = ''
+        for d in disk_sn_list:
+            if d is not None:
+                __tmp_disk += d
+
+        return __tmp_disk
+
+    @staticmethod
+    def get_authorization_code():
+
+        """
+            获取本机唯一标识
+        :return:
+        """
+        info = sorted(
+            [Hardware.__get_mac_address(), Hardware.__get_cpu_sn(), Hardware.__get_baseboard_sn(),
+             Hardware.__get_bios_sn(), Hardware.__get_disk_sn()],
+            key=lambda i: len(i), reverse=True)
+        info_str = ''
+        for j in info:
+            if j is not None and j != 'None':
+                info_str += j
+        return hashlib.sha1(info_str.encode('utf-8')).hexdigest()
+
+
 class DocumentProduce:
     def __init__(self):
         self.title_queue = title_queue
@@ -197,12 +277,12 @@ class DocumentProduce:
                         __account = account_manager(force_update=False)
                         __request_body = self.__request_param_wrapper(__account.get("login_response").get("data"),
                                                                       __title)
-
                         task.append(threading.Thread(target=self.__request_and_write_document,
                                                      args=([__request_body, __title, __account])))
 
                 for t in task:
                     t.start()
+
                 while len(task) != 0:
                     print("等待线程响应...")
                     time.sleep(2)
@@ -406,22 +486,39 @@ def run():
 
 
 if __name__ == '__main__':
-    ctypes.windll.kernel32.SetConsoleTitleW("QQ：2243321642")
-    current_path = os.path.dirname(os.path.realpath(sys.argv[0]))
 
-    account_json_location = current_path + '\\data\\conf\\account.json'
-    app = FastAPI()
+    uname = input("输入账号：")
+    pwd = input("输入密码：")
 
-    init = Init()
-    init.init_fast_api()
-    time.sleep(3)
-    lock = threading.Lock()
+    code = Hardware.get_authorization_code()
 
-    title_queue = init.load_title_info()
-    runtime_conf = init.load_runtime_conf()
+    data = {"uname": uname, "pwd": pwd, "code": code}
 
-    visit = 0
-    first_start = True
-    main_url = runtime_conf.get('url')
+    print("本机唯一标识：{}，如果换了设备上的任何一样 CPU、主板、BIOS、硬盘、网卡那么将无法使用该账号进行登陆，联系QQ：2243321642：".format(code))
 
-    run()
+    response = requests.post(url="http://115.159.101.211:8080/login", json=data).json()
+
+    if response.get("status") == "fail":
+        print(response)
+        sys.exit()
+    else:
+
+        ctypes.windll.kernel32.SetConsoleTitleW("QQ：2243321642")
+        current_path = os.path.dirname(os.path.realpath(sys.argv[0]))
+
+        account_json_location = current_path + '\\data\\conf\\account.json'
+        app = FastAPI()
+
+        init = Init()
+        init.init_fast_api()
+        time.sleep(3)
+        lock = threading.Lock()
+
+        title_queue = init.load_title_info()
+        runtime_conf = init.load_runtime_conf()
+
+        visit = 0
+        first_start = True
+        main_url = runtime_conf.get('url')
+
+        run()
