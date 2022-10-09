@@ -145,6 +145,7 @@ class Init:
         url = "http://127.0.0.1:8000/" + password
 
         # 自动下载驱动
+
         session = requests_html.HTMLSession()
         r = session.get(url)
 
@@ -179,62 +180,59 @@ class Hardware:
 
     @staticmethod
     def __get_mac_address():
-        node = uuid.getnode()
+        try:
 
-        mac = uuid.UUID(int=node).hex[-12:]
+            node = uuid.getnode()
+            mac = uuid.UUID(int=node).hex[-12:]
 
-        return mac
+            return mac
+        except RuntimeWarning as e:
+            return "invalid"
 
     @staticmethod
     def __get_cpu_sn():
-        """
-        获取CPU序列号
-        :return: CPU序列号
-        """
-        c = wmi.WMI()
-        for cpu in c.Win32_Processor():
-            # print(cpu.ProcessorId.strip())
-            return cpu.ProcessorId.strip()
+
+        try:
+            c = wmi.WMI()
+            for cpu in c.Win32_Processor():
+                return cpu.ProcessorId.strip()
+        except RuntimeWarning as e:
+            return "invalid"
 
     @staticmethod
     def __get_baseboard_sn():
-        """
-        获取主板序列号
-        :return: 主板序列号
-        """
-        c = wmi.WMI()
-        for board_id in c.Win32_BaseBoard():
-            # print(board_id.SerialNumber)
-            return board_id.SerialNumber
+        try:
+            c = wmi.WMI()
+            for board_id in c.Win32_BaseBoard():
+                return board_id.SerialNumber
+        except RuntimeWarning as e:
+            return "invalid"
 
     @staticmethod
     def __get_bios_sn():
-        """
-        获取BIOS序列号
-        :return: BIOS序列号
-        """
-        c = wmi.WMI()
-        for bios_id in c.Win32_BIOS():
-            # print(bios_id.SerialNumber.strip)
-            return bios_id.SerialNumber.strip()
+        try:
+            c = wmi.WMI()
+            for bios_id in c.Win32_BIOS():
+                return bios_id.SerialNumber.strip()
+        except RuntimeWarning as e:
+            return "invalid"
 
     @staticmethod
     def __get_disk_sn():
-        """
-        获取硬盘序列号
-        :return: 硬盘序列号列表
-        """
-        c = wmi.WMI()
+        try:
+            c = wmi.WMI()
 
-        disk_sn_list = []
-        for physical_disk in c.Win32_DiskDrive():
-            disk_sn_list.append(physical_disk.SerialNumber.replace(" ", ""))
-        __tmp_disk = ''
-        for d in disk_sn_list:
-            if d is not None:
-                __tmp_disk += d
+            disk_sn_list = []
+            for physical_disk in c.Win32_DiskDrive():
+                disk_sn_list.append(physical_disk.SerialNumber.replace(" ", ""))
+            __tmp_disk = ''
+            for d in disk_sn_list:
+                if d is not None:
+                    __tmp_disk += d
+            return __tmp_disk
+        except RuntimeWarning as e:
+            return "invalid"
 
-        return __tmp_disk
 
     @staticmethod
     def get_authorization_code():
@@ -499,7 +497,7 @@ if __name__ == '__main__':
     response = requests.post(url="http://115.159.101.211:8080/login", json=data).json()
 
     if response.get("status") == "fail":
-        print(response)
+        input(response)
         sys.exit()
     else:
 
