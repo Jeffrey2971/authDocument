@@ -137,10 +137,12 @@ class Init:
 
     def __static_login(self, username, password):
 
-        data = {
-            "login_by": "account",
-            "account": username,
-            "pwd": ""}
+        """
+            函数用于将明文账号密码通过 jsencrypt.min.js 加密模块加密后作为参数请求登陆，并获取登陆数据
+        :param username: account.txt 中的账号
+        :param password: account.txt 中的密码
+        :return: 登陆后的 json 数据
+        """
 
         url = "http://127.0.0.1:8000/" + password
 
@@ -149,12 +151,13 @@ class Init:
         session = requests_html.HTMLSession()
         r = session.get(url)
 
-        data["pwd"] = r.html.render(script="a()", timeout=200).strip()
+        post_data = {"login_by": "account", "account": username,
+                     "pwd": r.html.render(script="a()", timeout=200).strip()}
 
         resp = requests.post(url=self.login_url, headers={
             "user-agent": self.user_agent,
             "referer": self.referer,
-        }, data=data)
+        }, data=post_data)
 
         return resp.json()
 
@@ -170,6 +173,8 @@ class Init:
 
         with open(file=self.log_location, mode='w+', encoding='utf-8') as f:
             f.writelines(info + '\n\n')
+
+        sys.exit()
 
     @staticmethod
     def __static_print(info):
@@ -233,7 +238,6 @@ class Hardware:
         except RuntimeWarning as e:
             return "invalid"
 
-
     @staticmethod
     def get_authorization_code():
 
@@ -265,60 +269,73 @@ class DocumentProduce:
 
     def run(self):
 
-        global __thread
         while True:
             if not self.title_queue.empty():
                 task = []
                 for i in range(int(runtime_conf.get("step"))):
                     if not self.title_queue.empty():
                         __title = self.title_queue.get().replace('\n', '')
+                        # 获取一个可用账号
                         __account = account_manager(force_update=False)
+                        # 包装本次请求所需参数
                         __request_body = self.__request_param_wrapper(__account.get("login_response").get("data"),
                                                                       __title)
+                        if __request_body is None:
+                            continue
+
+                        # 将线程实例放入队列中，但不启动它们
                         task.append(threading.Thread(target=self.__request_and_write_document,
                                                      args=([__request_body, __title, __account])))
 
+                # 启动所有的线程
                 for t in task:
                     t.start()
 
+                # 校验所有线程的状态，如果线程不存活那么将该线程从队列中弹出（线程一定要确保能够结束，不会卡死，避免队列填满，导致程序无响应）
                 while len(task) != 0:
-                    print("等待线程响应...")
+                    print("等待线程完成...")
                     time.sleep(2)
                     for t in task:
                         if not t.is_alive():
-                            print("子线程完成：" + task.pop().getName())
-
+                            print("执行完毕，将线程从队列中弹出：" + task.pop().getName())
             else:
                 print("没有更多标题，程序结束")
                 sys.exit()
 
     # 请求参数包装
-    def __request_param_wrapper(self, data, title):
-        __uid = data.get("uid")
-        __sid = data.get("sid")
-        headers = {
-            "User-Agent": self.user_agent,
-            "referer": self.referer,
-            "origin": self.origin,
-            "content-type": self.content_type,
-            "accept": "",
-            "cookie": "uid={}; sid={};".format(__uid, __sid)
-        }
-        data = {
-            "length": "default",
-            "data": {"title": title}
-        }
+    def __request_param_wrapper(self, login_data, title):
 
-        return {"headers": headers, "data": data}
+        try:
+            __uid = login_data.get("uid")
+            __sid = login_data.get("sid")
+
+            headers = {
+                "User-Agent": self.user_agent,
+                "referer": self.referer,
+                "origin": self.origin,
+                "content-type": self.content_type,
+                "accept": "",
+                "cookie": "uid={}; sid={};".format(__uid, __sid)
+            }
+
+            __data = {
+                "length": "default",
+                "data": {"title": title}
+            }
+
+            return {"headers": headers, "data": __data}
+        except RuntimeWarning as e:
+            print("包装请求出错，本次请求忽略")
+            return None
 
     def __request_and_write_document(self, request_body, title, __account):
         print("处理：" + title)
+
         __response_json = requests.post(url=self.login_url, headers=request_body.get("headers"),
                                         json=request_body.get("data")).json()
-        print(__response_json)
-        if __response_json.get("errCode") == 0:
-            # success
 
+        if __response_json.get("errCode") == 0:
+            # 本次请求成功
             with open(file=current_path + "\\data\\document\\{}.txt".format(title), mode='w', encoding='utf-8') as j:
                 intro = __response_json.get("data").get("result").get("intro") + '\n\n'
                 contents_list = __response_json.get("data").get("result").get("contents")
@@ -329,22 +346,18 @@ class DocumentProduce:
                 j.flush()
 
         elif __response_json.get("errCode") == 401:
-            # 有异常时把标题返回队列
-            self.title_queue.put(title)
             print("账号被禁止登陆")
-            pass
-        elif __response_json.get("errCode") == 4001:
-            # threshold
             # 有异常时把标题返回队列
             self.title_queue.put(title)
-            # lock.release()
-            print(account_big_json_dict)
             if account_manager(force_update=True) is None:
-                lock.release()
-
-        # json.dump(__response_json.json(),
-        #           open(current_path + "data/document/{}.txt".format(title), mode='w+', encoding='utf-8'),
-        #           ensure_ascii=False, indent=4)
+                sys.exit()
+        elif __response_json.get("errCode") == 4001:
+            print("账号达到每日最大使用次数")
+            # 该账号达到最大使用次数，今日无法使用
+            # 有异常时把标题返回队列
+            self.title_queue.put(title)
+            if account_manager(force_update=True) is None:
+                sys.exit()
 
 
 first_get_account = True
@@ -363,6 +376,7 @@ def account_manager(force_update):
         pop_account.append(current_use_account)
         if len(account_big_json_dict.get("accounts")) == 0:
             print("已经没有可用的账号")
+            lock.release()
             return None
         else:
             current_use_account = account_big_json_dict.get("accounts").pop()
